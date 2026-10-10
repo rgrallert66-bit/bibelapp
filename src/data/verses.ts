@@ -5,7 +5,7 @@
 //
 // The set is deliberately small (well below the publishers' gratis quotation limits). Before a public
 // release every text must be checked against the licensed edition and written permission obtained for
-// use inside an app – see LICENSING.md. `checked` records how each German text was verified so far:
+// use inside an app – see docs/LIZENZEN.md. `checked` records how each German text was verified so far:
 //   'source' – compared against a published ELB 2006 rendering
 //   'pending' – transcribed carefully, still needs a final check against the printed edition
 
