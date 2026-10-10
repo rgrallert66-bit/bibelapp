@@ -98,6 +98,15 @@ export const sfx = {
     const f = noteFreq(Math.min(step, 14))
     voice(f, c.currentTime, { gain: 0.2, decay: 0.7 })
   },
+  /** Streak milestone: the rising run resolves into a warm chord. */
+  chord(level: number) {
+    const c = ready()
+    if (!c) return
+    const t = c.currentTime
+    const base = [0, 2, 4][Math.max(0, Math.min(2, level))] + 5
+    ;[0, 2, 4, 5].forEach((s, i) => voice(noteFreq(base + s), t + i * 0.035, { gain: 0.12, decay: 1.6, type: i ? 'sine' : 'triangle' }))
+    voice(noteFreq(base + 10), t + 0.16, { gain: 0.06, decay: 1.8 })
+  },
   /** Soft, non-punishing "hm". */
   wrong() {
     const c = ready()

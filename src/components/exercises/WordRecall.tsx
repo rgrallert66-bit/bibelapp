@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { motion } from 'motion/react'
-import { Keyboard } from '../Keyboard'
+import { useSessionKeyboard } from './kb'
 import { hintMask, hashStr, tokenize } from '../../lib/text'
 import { useT, pick } from '../../lib/i18n'
 import { sfx } from '../../lib/audio'
@@ -20,7 +20,6 @@ export function WordRecall({ verse, lang, step, onDone, onCorrect, onWrong }: Ex
   const [states, setStates] = useState<WS[]>(() => words.map(() => 'hidden'))
   const [idx, setIdx] = useState(0)
   const [miss, setMiss] = useState(0)
-  const [wrongKey, setWrongKey] = useState<{ k: string; n: number } | null>(null)
   const [finished, setFinished] = useState<null | { score: number; perfect: boolean }>(null)
   const [shake, setShake] = useState(0)
   const start = useRef(performance.now())
@@ -60,7 +59,7 @@ export function WordRecall({ verse, lang, step, onDone, onCorrect, onWrong }: Ex
       onCorrect(wordRefs.current[idx])
       advance(st)
     } else {
-      setWrongKey({ k, n: Date.now() })
+      kb?.setWrong(k)
       setShake((s) => s + 1)
       onWrong()
       if (miss >= 1) {
@@ -70,6 +69,8 @@ export function WordRecall({ verse, lang, step, onDone, onCorrect, onWrong }: Ex
       } else setMiss(1)
     }
   }
+
+  const kb = useSessionKeyboard(onKey, !!finished)
 
   const reveal = () => {
     if (finished) return
@@ -154,7 +155,6 @@ export function WordRecall({ verse, lang, step, onDone, onCorrect, onWrong }: Ex
             </button>
           </div>
         )}
-        <Keyboard lang={lang} onKey={onKey} wrongKey={wrongKey} disabled={!!finished} />
       </div>
     </div>
   )
@@ -172,7 +172,7 @@ export function ResultBanner({ score, total, perfect }: { score: number; total: 
       transition={{ type: 'spring', stiffness: 420, damping: 24 }}
     >
       <span className="rb-label">{label}</span>
-      <span className="rb-sub">{perfect ? `${total}/${total}` : t.wordsOf(Math.round(score * 10) / 10, total)}</span>
+      <span className="rb-sub">{t.wordsOf(Math.floor(score), total)}</span>
     </motion.div>
   )
 }

@@ -76,14 +76,14 @@ export default function App() {
 
   return (
     <div className="app">
-      <AnimatePresence mode="wait" initial={false}>
+      {/* cross-fade between screens: never a blank frame */}
+      <AnimatePresence initial={false}>
         <motion.div
           key={key}
           className="view"
-          initial={{ opacity: 0, y: key.startsWith('tab') ? 0 : 24, scale: key === 'complete' ? 0.97 : 1 }}
-          animate={{ opacity: 1, y: 0, scale: 1 }}
-          exit={{ opacity: 0, y: key === 'session' ? 24 : 0 }}
-          transition={{ duration: 0.32, ease: [0.2, 0.8, 0.2, 1] }}
+          initial={{ opacity: 0, y: key.startsWith('tab') ? 0 : 18, scale: key === 'complete' ? 0.97 : 1 }}
+          animate={{ opacity: 1, y: 0, scale: 1, transition: { duration: 0.34, ease: [0.2, 0.8, 0.2, 1] } }}
+          exit={{ opacity: 0, transition: { duration: 0.22 } }}
         >
           {content}
         </motion.div>
@@ -117,7 +117,7 @@ function TabBar({ tab, onTab }: { tab: Tab; onTab: (t: Tab) => void }) {
     },
   ]
   return (
-    <nav className="tabbar">
+    <nav className={`tabbar ${tab !== 'home' ? 'tabbar-fade' : ''}`}>
       {items.map((it) => (
         <button key={it.id} className={`tab ${tab === it.id ? 'on' : ''}`} onClick={() => onTab(it.id)} aria-current={tab === it.id}>
           {tab === it.id && <motion.span layoutId="tab-pill" className="tab-pill" transition={{ type: 'spring', stiffness: 500, damping: 38 }} />}

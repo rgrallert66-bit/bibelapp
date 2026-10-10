@@ -1,8 +1,9 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { LayoutGroup, motion } from 'motion/react'
 import { chunk, hashStr, rng, shuffle, tokenize } from '../../lib/text'
 import { useT } from '../../lib/i18n'
 import { sfx } from '../../lib/audio'
+import { burstAt } from '../Sparkles'
 import { verseSize, type ExProps } from './types'
 import { ResultBanner } from './WordRecall'
 
@@ -31,7 +32,13 @@ export function Build({ verse, lang, step, onDone, onCorrect, onWrong }: ExProps
   const [shakeId, setShakeId] = useState<{ id: number; n: number } | null>(null)
   const [done, setDone] = useState<null | { score: number }>(null)
   const start = useRef(performance.now())
-  const tileRefs = useRef<Record<number, HTMLElement | null>>({})
+  const placedRefs = useRef<Record<number, HTMLElement | null>>({})
+  const [wrongId, setWrongId] = useState<number | null>(null)
+  useEffect(() => {
+    if (wrongId == null) return
+    const id = setTimeout(() => setWrongId(null), 380)
+    return () => clearTimeout(id)
+  }, [wrongId, shakeId])
 
   const pick = (p: Piece) => {
     if (done) return
@@ -40,7 +47,8 @@ export function Build({ verse, lang, step, onDone, onCorrect, onWrong }: ExProps
     if (p.text === expected.text) {
       // identical texts are interchangeable
       const np = [...placed, p.id]
-      onCorrect(tileRefs.current[p.id])
+      // feedback (sound, haptics, flow) now; particles fire where the piece lands
+      onCorrect(null)
       setPlaced(np)
       if (np.length === pieces.length) {
         const score = pieces.length - errors.size
@@ -52,6 +60,7 @@ export function Build({ verse, lang, step, onDone, onCorrect, onWrong }: ExProps
       onWrong()
       setErrors((e) => new Set(e).add(nextIdx))
       setShakeId({ id: p.id, n: Date.now() })
+      setWrongId(p.id)
     }
   }
 
@@ -71,11 +80,21 @@ export function Build({ verse, lang, step, onDone, onCorrect, onWrong }: ExProps
               <motion.span
                 layoutId={`piece-${p.id}`}
                 key={p.id}
+                ref={(el) => {
+                  placedRefs.current[p.id] = el
+                }}
                 className={`placed ${done ? 'w-wave' : ''}`}
                 style={done ? { animationDelay: `${p.id * 50}ms` } : undefined}
-                transition={{ type: 'spring', stiffness: 520, damping: 34 }}
+                transition={{ type: 'spring', stiffness: 380, damping: 28 }}
+                onLayoutAnimationComplete={() => {
+                  const el = placedRefs.current[p.id]
+                  if (!el || el.dataset.landed) return
+                  el.dataset.landed = '1'
+                  el.classList.add('placed-land')
+                  burstAt(el, { count: 10, speed: 2.6, size: 4, colors: ['#F7D488', '#FFF3D6', '#FFE7A3'] })
+                }}
               >
-                {p.text}{' '}
+                {p.text}
               </motion.span>
             ))}
             {!done && <span className="caret" />}
@@ -95,16 +114,13 @@ export function Build({ verse, lang, step, onDone, onCorrect, onWrong }: ExProps
                   <motion.button
                     key={p.id}
                     layoutId={`piece-${p.id}`}
-                    ref={(el) => {
-                      tileRefs.current[p.id] = el
-                    }}
-                    className="tile"
+                    className={`tile ${wrongId === p.id ? 'tile-wrong' : ''}`}
                     onPointerDown={(e) => {
                       e.preventDefault()
                       pick(p)
                     }}
-                    animate={shakeId?.id === p.id ? { x: [0, -8, 8, -5, 5, 0] } : { x: 0 }}
-                    transition={{ type: 'spring', stiffness: 520, damping: 34, x: { duration: 0.34 } }}
+                    animate={shakeId?.id === p.id ? { x: [0, -5, 5, -3, 3, 0] } : { x: 0 }}
+                    transition={{ type: 'spring', stiffness: 380, damping: 28, x: { duration: 0.3 } }}
                     whileTap={{ scale: 0.94 }}
                   >
                     {p.text}

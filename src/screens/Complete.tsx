@@ -4,17 +4,18 @@ import { VERSE_BY_ID } from '../data/verses'
 import { sfx, haptic } from '../lib/audio'
 import { useT } from '../lib/i18n'
 import { useStore } from '../lib/store'
-import { burst } from '../components/Sparkles'
+import { burst, ring } from '../components/Sparkles'
 import type { SessionSummary } from './Session'
 
 function useCount(to: number, delay = 0, dur = 900) {
-  const [v, setV] = useState(0)
+  // start close to the final value: a short, confident count-up (no misleading "7%" flashes)
+  const [v, setV] = useState(to * 0.8)
   useEffect(() => {
     let raf = 0
     const t0 = performance.now() + delay
     const tick = (now: number) => {
       const k = Math.min(1, Math.max(0, (now - t0) / dur))
-      setV(to * (1 - Math.pow(1 - k, 3)))
+      setV(to * (0.8 + 0.2 * (1 - Math.pow(1 - k, 3))))
       if (k < 1) raf = requestAnimationFrame(tick)
     }
     raf = requestAnimationFrame(tick)
@@ -36,9 +37,14 @@ export function Complete({ summary, grew, onContinue }: { summary: SessionSummar
   useEffect(() => {
     sfx.celebrate()
     haptic('success')
+    // confetti bursts out from behind the medal once it has landed
     const id = setTimeout(() => {
-      burst(window.innerWidth / 2, window.innerHeight * 0.26, { count: 40, speed: 6, colors: ['#FFE7A3', '#FFF6DE', '#9BE8B4', '#F7A6B9', '#9FD8FF'], kinds: ['dot', 'star', 'leaf'], size: 3.4, up: 2 })
-    }, 250)
+      const m = document.querySelector('.medal')?.getBoundingClientRect()
+      const x = m ? m.left + m.width / 2 : window.innerWidth / 2
+      const y = m ? m.top + m.height / 2 : window.innerHeight * 0.18
+      burst(x, y, { count: 34, speed: 6.5, colors: ['#FFE7A3', '#FFF6DE', '#9BE8B4', '#F7A6B9', '#9FD8FF'], kinds: ['dot', 'star', 'leaf'], size: 4.2, up: 3 })
+      ring(x, y)
+    }, 420)
     return () => clearTimeout(id)
   }, [])
 

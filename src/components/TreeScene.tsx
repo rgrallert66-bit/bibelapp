@@ -1,4 +1,4 @@
-import { memo, useMemo, type ReactNode } from 'react'
+import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { crownHalfWidth, generateTree, growthOf, leaderHeight, type Seg, type Tree } from '../lib/tree'
 import type { Stage } from '../lib/store'
 import { rng } from '../lib/text'
@@ -19,6 +19,8 @@ interface Props {
   onFruit?: (vid: string) => void
   fresh?: string | null
   className?: string
+  /** px covered by UI at the top (header) – the tree is framed below it */
+  topInset?: number
 }
 
 // ── colour helpers ───────────────────────────────────────────────
@@ -82,7 +84,25 @@ function branchPath(s: Seg, L: number, wScale: number) {
 
 type Pass = 'wood' | 'leaf0' | 'leaf1' | 'leaf2' | 'fruit'
 
-function TreeSceneImpl({ seed, growth, fruits, hour, level, onFruit, fresh, className }: Props) {
+function useSize() {
+  const ref = useRef<SVGSVGElement>(null)
+  const [size, setSize] = useState({ w: 390, h: 610 })
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const ro = new ResizeObserver(() => setSize({ w: el.clientWidth || 390, h: el.clientHeight || 610 }))
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+  return [ref, size] as const
+}
+
+function TreeSceneImpl({ seed, growth, fruits, hour, level, onFruit, fresh, className, topInset = 140 }: Props) {
+  const [svgRef, size] = useSize()
+  // viewBox is 400×760 with "xMidYMax slice": work out which part of it is actually visible
+  const vbScale = Math.max(size.w / 400, size.h / 760)
+  const visibleTop = 760 - size.h / vbScale
+  const headerUnits = topInset / vbScale
   const tree: Tree = useMemo(() => generateTree(seed), [seed])
   const sky = skyAt(hour)
   const g = Math.max(0, growth)
@@ -90,7 +110,8 @@ function TreeSceneImpl({ seed, growth, fruits, hour, level, onFruit, fresh, clas
   const wScale = 0.38 + 0.62 * age
   const H = Math.max(30, leaderHeight(tree, g))
   const W = useMemo(() => crownHalfWidth(tree, g), [tree, g])
-  const zoom = Math.min(1.6 - 0.72 * Math.min(1, g / 45), 345 / H, 188 / W)
+  const maxH = Math.max(110, Math.min(345, BASE_Y - visibleTop - headerUnits - 26))
+  const zoom = Math.min(1.6 - 0.72 * Math.min(1, g / 45), maxH / H, 188 / W)
   const fruitScale = 1 / zoom
 
   // assign verses to fruit slots (stable: slots are ordered by birth, new ones are appended)
@@ -121,7 +142,8 @@ function TreeSceneImpl({ seed, growth, fruits, hour, level, onFruit, fresh, clas
       const leafy = s.depth >= 2 || !visibleKids
       if (leafy) {
         // young trees get proportionally bigger leaves, so a sapling looks lush instead of bare
-        const k = (0.5 + 0.5 * Math.min(1, (g - s.birth) / 2.5)) * (0.6 + 0.4 * gf) * (1.25 - 0.3 * age)
+        const sprout = Math.min(1, (g - s.birth) / 0.8)
+        const k = (1 - Math.pow(1 - sprout, 3)) * (0.5 + 0.5 * Math.min(1, (g - s.birth) / 2.5)) * (0.6 + 0.4 * gf) * (1.25 - 0.3 * age)
         const sc = (L / s.len) * 0.5 + 0.5
         content = s.blobs
           .filter((b) => b.layer === layer)
@@ -138,7 +160,7 @@ function TreeSceneImpl({ seed, growth, fruits, hour, level, onFruit, fresh, clas
               key={f.vid}
               transform={`translate(${(slot.x + j * 9) * (L / s.len) ** 0.5} ${slot.y * (L / s.len)}) rotate(${-s.abs})`}
             >
-              <FruitMark fruit={f} scale={fruitScale} fresh={fresh === f.vid} onTap={onFruit} />
+              <FruitMark fruit={f} scale={fruitScale} hit={22 / (zoom * vbScale)} fresh={fresh === f.vid} onTap={onFruit} />
             </g>,
           )
         })
@@ -171,12 +193,13 @@ function TreeSceneImpl({ seed, growth, fruits, hour, level, onFruit, fresh, clas
   const dayT = Math.min(1, Math.max(0, (hour - 6) / 14))
   const sunUp = hour >= 6 && hour <= 20.2
   const sunX = 230 + dayT * 130
-  const sunY = 330 - Math.sin(dayT * Math.PI) * 140
+  const skyTop = visibleTop + headerUnits * 0.55
+  const sunY = skyTop + 50 + (1 - Math.sin(dayT * Math.PI)) * 120
   const moon = !sunUp
   const riverY = (x: number) => 618 + Math.sin(x / 70) * 6 - (x / 400) * 8
 
   return (
-    <svg className={className} viewBox="0 0 400 760" preserveAspectRatio="xMidYMax slice" aria-hidden={!onFruit}>
+    <svg ref={svgRef} className={className} viewBox="0 0 400 760" preserveAspectRatio="xMidYMax slice" aria-hidden={!onFruit}>
       <defs>
         <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
           <stop offset="0" stopColor={sky.top} />
@@ -236,7 +259,7 @@ function TreeSceneImpl({ seed, growth, fruits, hour, level, onFruit, fresh, clas
       </g>
 
       {/* sun / moon */}
-      <g transform={`translate(${moon ? 330 : sunX} ${moon ? 230 : sunY})`}>
+      <g transform={`translate(${moon ? 330 : sunX} ${moon ? skyTop + 70 : sunY})`}>
         <circle r="95" fill="url(#sunglow)" opacity={moon ? 0.4 : 0.85} />
         <circle r={moon ? 14 : 18} fill={sky.sun} opacity="0.95" />
         {moon && <circle r="12" cx="6" cy="-4" fill={sky.top} opacity="0.92" />}
@@ -303,12 +326,27 @@ function TreeSceneImpl({ seed, growth, fruits, hour, level, onFruit, fresh, clas
   )
 }
 
-function FruitMark({ fruit, scale, fresh, onTap }: { fruit: Fruit; scale: number; fresh: boolean; onTap?: (vid: string) => void }) {
+function FruitMark({ fruit, scale, hit, fresh, onTap }: { fruit: Fruit; scale: number; hit: number; fresh: boolean; onTap?: (vid: string) => void }) {
   const s = Math.min(1.4, Math.max(0.55, scale))
   const dim = fruit.thirsty ? 0.62 : 1
+  const [tapped, setTapped] = useState(0)
   return (
-    <g transform={`scale(${s})`} className={fresh ? 'fruit fresh' : 'fruit'} onClick={onTap ? () => onTap(fruit.vid) : undefined} style={{ cursor: onTap ? 'pointer' : undefined }} data-vid={fruit.vid}>
-      <circle r="16" fill="transparent" />
+    <g
+      transform={`scale(${s})`}
+      className={`fruit ${fresh ? 'fresh' : ''} ${tapped ? (tapped % 2 ? 'tapped' : 'tapped2') : ''}`}
+      onClick={
+        onTap
+          ? () => {
+              setTapped((n) => n + 1)
+              onTap(fruit.vid)
+            }
+          : undefined
+      }
+      style={{ cursor: onTap ? 'pointer' : undefined }}
+      data-vid={fruit.vid}
+    >
+      {/* generous invisible tap target (~44px on screen) */}
+      <circle r={Math.max(16, hit / s)} fill="transparent" />
       <g opacity={dim} className="fruit-inner">
         <path d="M0 -9 L0 -4" stroke="#3a2a20" strokeWidth="1.2" />
         {fruit.stage === 'bud' && (

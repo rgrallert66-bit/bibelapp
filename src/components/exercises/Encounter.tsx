@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
 import { chunk } from '../../lib/text'
 import { useT } from '../../lib/i18n'
@@ -22,8 +22,12 @@ export function Encounter({ verse, lang, onDone }: ExProps) {
     setShown((n) => n + 1)
     sfx.correct(shown + 2)
     haptic('light')
-    requestAnimationFrame(() => burstAt(lastRef.current, { count: 5, speed: 1.6, size: 2.2 }))
   }
+
+  // sparkle on the phrase that has just appeared (after it is committed to the DOM)
+  useEffect(() => {
+    if (shown > 1) burstAt(lastRef.current, { count: 8, speed: 2, size: 3.6, spread: 60 })
+  }, [shown])
 
   const listen = () => {
     setShown(chunks.length)

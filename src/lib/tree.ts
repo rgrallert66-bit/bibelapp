@@ -178,9 +178,11 @@ export function generateTree(seed: number): Tree {
 /** How far a segment has grown (0 = hidden, 1 = full length). */
 export function growthOf(s: Seg, g: number): number {
   if (s.birth > g) return 0
+  // continuous from 0 at birth, so the growth animation never "pops" a branch into place
+  const sprout = Math.min(1, (g - s.birth) / 0.6)
   const k = Math.min(1, (g - s.birth) / 5)
   const e = 1 - Math.pow(1 - k, 2)
-  return 0.28 + 0.72 * e
+  return Math.max(1e-3, 0.28 * (1 - Math.pow(1 - sprout, 2)) + 0.72 * e)
 }
 
 /** Height of the leader at growth g (for camera framing). */

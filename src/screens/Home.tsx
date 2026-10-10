@@ -7,7 +7,7 @@ import { dayKey, now, weekDays } from '../lib/date'
 import { MILESTONES, useT } from '../lib/i18n'
 import { planSession } from '../lib/session'
 import { cardsFor, getState, recallNow, setState, stageOf, todayLog, useStore } from '../lib/store'
-import { burst } from '../components/Sparkles'
+import { burst, ring } from '../components/Sparkles'
 import { DropIcon } from './Complete'
 import { hourOverride } from '../lib/debug'
 
@@ -51,50 +51,83 @@ export function Home({ onStart, onPractice, onVerse, onGoalSetup, fresh }: Props
   const done = todayLog(st, today).goal
   const week = weekDays(today)
 
-  // growth animation: from the last value the user has seen to the current one
+  // Watering: after a completed session the user holds the watering button and the tree grows in real time.
+  const pending = st.growthShown < st.growth
   const [g, setG] = useState(st.growthShown)
-  const [watering, setWatering] = useState(false)
+  const [holding, setHolding] = useState(false)
+  const [waterP, setWaterP] = useState(0)
   const [toast, setToast] = useState<string | null>(null)
   const [milestone, setMilestone] = useState<number | null>(null)
-  const animating = useRef(false)
+  const raf = useRef(0)
+  const pRef = useRef(0)
+  const lastTick = useRef(-1)
+  const from = st.growthShown
+  const to = st.growth
 
   useEffect(() => {
-    if (animating.current) return
-    if (st.growthShown >= st.growth) {
-      setG(st.growth)
-      return
+    if (!pending) setG(st.growth)
+  }, [pending, st.growth])
+  useEffect(() => () => cancelAnimationFrame(raf.current), [])
+
+  // goal + moment are asked on the second visit, not stacked onto the first-day celebration
+  useEffect(() => {
+    if (!pending && st.growth >= 1 && !st.goalChosen && !done) {
+      const id = setTimeout(onGoalSetup, 700)
+      return () => clearTimeout(id)
     }
-    animating.current = true
-    const from = st.growthShown
-    const to = st.growth
-    setWatering(true)
-    sfx.grow()
-    haptic('success')
-    const drops = [0, 180, 320, 470, 610, 760]
-    drops.forEach((d) => setTimeout(() => sfx.drop(), 500 + d))
-    const startAt = performance.now() + 1100
-    let raf = 0
-    const tick = (n: number) => {
-      const k = Math.min(1, Math.max(0, (n - startAt) / 2600))
-      const e = 1 - Math.pow(1 - k, 3)
-      setG(from + (to - from) * e)
-      if (k < 1) raf = requestAnimationFrame(tick)
-      else {
-        setWatering(false)
-        animating.current = false
-        burst(window.innerWidth / 2, window.innerHeight * 0.35, { count: 26, speed: 4, colors: ['#9BE8B4', '#FFF3D6', '#FFE7A3'], kinds: ['leaf', 'dot', 'star'], up: 2.5 })
-        setToast(t.growthToast(to))
-        setTimeout(() => setToast(null), 2600)
-        const crossed = MILESTONES.filter((m) => m > from && m <= to && !st.milestonesShown.includes(m))
-        setState((s) => ({ growthShown: to, milestonesShown: [...s.milestonesShown, ...crossed] }))
-        if (crossed.length) setTimeout(() => setMilestone(crossed[crossed.length - 1]), 900)
-        else if (!getState().goalChosen) setTimeout(onGoalSetup, 1400)
-      }
-    }
-    raf = requestAnimationFrame(tick)
-    return () => cancelAnimationFrame(raf)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [st.growth])
+  }, [])
+
+  const finishWatering = () => {
+    setHolding(false)
+    sfx.celebrate()
+    haptic('success')
+    const fruitEl = fresh ? document.querySelector(`[data-vid="${fresh}"]`) : null
+    const r = fruitEl?.getBoundingClientRect()
+    const x = r ? r.left + r.width / 2 : window.innerWidth / 2
+    const y = r ? r.top + r.height / 2 : window.innerHeight * 0.35
+    burst(x, y, { count: 34, speed: 5, size: 4.5, colors: ['#9BE8B4', '#FFF3D6', '#FFE7A3', '#F7A6B9'], kinds: ['leaf', 'dot', 'star'], up: 2.2 })
+    ring(x, y, 'rgba(155,232,180,0.9)')
+    setToast(t.growthToast(to))
+    setTimeout(() => setToast(null), 2600)
+    const crossed = MILESTONES.filter((m) => m > from && m <= to && !st.milestonesShown.includes(m))
+    setState((s) => ({ growthShown: to, milestonesShown: [...s.milestonesShown, ...crossed] }))
+    if (crossed.length) setTimeout(() => setMilestone(crossed[crossed.length - 1]), 1400)
+  }
+
+  const startWater = () => {
+    if (!pending) return
+    unlockAudio()
+    setHolding(true)
+    let last = performance.now()
+    const tick = (now: number) => {
+      const dt = now - last
+      last = now
+      pRef.current = Math.min(1, pRef.current + dt / 1700)
+      const p = pRef.current
+      setWaterP(p)
+      const e = 1 - Math.pow(1 - p, 2.2)
+      setG(from + (to - from) * e)
+      const step = Math.floor(p * 10)
+      if (step !== lastTick.current) {
+        lastTick.current = step
+        sfx.correct(step + 2)
+        if (step % 2 === 0) sfx.drop()
+        haptic('light')
+      }
+      if (p >= 1) {
+        finishWatering()
+        return
+      }
+      raf.current = requestAnimationFrame(tick)
+    }
+    raf.current = requestAnimationFrame(tick)
+  }
+  const stopWater = () => {
+    if (pRef.current >= 1) return
+    cancelAnimationFrame(raf.current)
+    setHolding(false)
+  }
 
   const greeting = hour < 5 ? t.greetingNight : hour < 11 ? t.greetingMorning : hour < 17.5 ? t.greetingDay : hour < 22 ? t.greetingEvening : t.greetingNight
   const nextM = MILESTONES.find((m) => m > st.growth)
@@ -102,10 +135,11 @@ export function Home({ onStart, onPractice, onVerse, onGoalSetup, fresh }: Props
 
   return (
     <div className="screen home">
-      <div className="scene-wrap">
-        <TreeScene className="scene" seed={st.seed} growth={g} fruits={fruits} hour={hour} level={Math.floor(g + 0.001)} onFruit={(vid) => { sfx.tap(); onVerse(vid) }} fresh={fresh} />
-        <AnimatePresence>{watering && <Rain />}</AnimatePresence>
+      <div className={`scene-wrap ${holding ? 'scene-focus' : ''}`}>
+        <TreeScene className="scene" seed={st.seed} growth={g} fruits={fruits} hour={hour} level={Math.floor(g + 0.001)} onFruit={(vid) => { sfx.tap(); onVerse(vid) }} fresh={pending ? null : fresh} />
+        <AnimatePresence>{holding && <Rain />}</AnimatePresence>
       </div>
+      <div className="head-fade" />
 
       <header className="home-head">
         <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
@@ -142,7 +176,16 @@ export function Home({ onStart, onPractice, onVerse, onGoalSetup, fresh }: Props
       </AnimatePresence>
 
       <motion.section className="panel" initial={{ y: 40, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ type: 'spring', stiffness: 260, damping: 28, delay: 0.15 }}>
-        {!done ? (
+        {pending ? (
+          <div className="water-panel">
+            <div>
+              <div className="panel-kicker">{t.waterKicker}</div>
+              <div className="panel-title sm">{t.waterTitle}</div>
+              <div className="panel-sub">{t.waterSub}</div>
+            </div>
+            <WaterButton p={waterP} holding={holding} onDown={startWater} onUp={stopWater} label={t.waterTree} />
+          </div>
+        ) : !done ? (
           <>
             <div className="panel-kicker">{t.todaySession}</div>
             <div className="panel-title">
@@ -223,13 +266,42 @@ export function Home({ onStart, onPractice, onVerse, onGoalSetup, fresh }: Props
 }
 
 function Rain() {
-  const drops = useMemo(() => Array.from({ length: 22 }, (_, i) => ({ x: 30 + Math.random() * 40, d: Math.random() * 0.9, s: 0.7 + Math.random() * 0.6, i })), [])
+  const drops = useMemo(
+    () => Array.from({ length: 26 }, (_, i) => ({ x: 28 + Math.random() * 44, end: 38 + Math.random() * 30, d: Math.random() * 0.8, s: 0.7 + Math.random() * 0.6, i })),
+    [],
+  )
   return (
-    <motion.div className="rain" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.4 }}>
+    <motion.div className="rain" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.3 }}>
       {drops.map((d) => (
-        <span key={d.i} className="drop" style={{ left: `${d.x}%`, animationDelay: `${0.35 + d.d}s`, transform: `scale(${d.s})` }} />
+        <span key={d.i} className="drop" style={{ left: `${d.x}%`, animationDelay: `${d.d}s`, '--end': `${d.end}%`, '--s': d.s } as React.CSSProperties} />
       ))}
     </motion.div>
+  )
+}
+
+function WaterButton({ p, holding, onDown, onUp, label }: { p: number; holding: boolean; onDown: () => void; onUp: () => void; label: string }) {
+  const C = 2 * Math.PI * 34
+  return (
+    <button
+      className={`water-btn ${holding ? 'holding' : ''}`}
+      aria-label={label}
+      onPointerDown={(e) => {
+        e.preventDefault()
+        ;(e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId)
+        onDown()
+      }}
+      onPointerUp={onUp}
+      onPointerCancel={onUp}
+      onContextMenu={(e) => e.preventDefault()}
+    >
+      <svg viewBox="0 0 80 80" width="80" height="80" aria-hidden>
+        <circle cx="40" cy="40" r="34" fill="none" stroke="rgba(159,216,255,.16)" strokeWidth="5" />
+        <circle cx="40" cy="40" r="34" fill="none" stroke="#9fd8ff" strokeWidth="5" strokeLinecap="round" strokeDasharray={C} strokeDashoffset={C * (1 - p)} transform="rotate(-90 40 40)" />
+      </svg>
+      <span className="water-core">
+        <DropIcon />
+      </span>
+    </button>
   )
 }
 
